@@ -2,9 +2,9 @@
 
 This folder contains examples of Olive recipes for `Qwen2.5-1.5B-Instruct` optimization.
 
-## INT4 Model Building
+## FP16 Model Building
 
-The olive recipe `Qwen2.5-1.5B-Instruct_model_builder_fp16.json` uses `ModelBuilder` and `MatMulNBitsToQDQ` passes to generate the INT4 model for `NvTensorRTRTXExecutionProvider` (aka `NvTensorRtRtx` EP).
+The olive recipe `Qwen2.5-1.5B-Instruct_model_builder_fp16.json` uses `ModelBuilder` pass to generate the FP16 model for `NvTensorRTRTXExecutionProvider` (aka `NvTensorRtRtx` EP).
 
 ### Setup
 

@@ -1,7 +1,7 @@
 {
     "input_model": {
         "type": "HfModel",
-        "model_path": "Qwen/Qwen2.5-7B-Instruct",
+        "model_path": "microsoft/phi-4",
         "task": "text-classification"
     },
     "systems": {
@@ -16,7 +16,7 @@
             "type": "ModelBuilder",
             "precision": "int4",
             "int4_block_size": 32,
-            "int4_algo_config": "rtn",
+            "int4_algo_config": "default",
             "int4_is_symmetric": true,
             "enable_cuda_graph": true
         },

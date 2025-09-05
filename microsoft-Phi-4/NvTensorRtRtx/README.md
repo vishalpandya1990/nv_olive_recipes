@@ -17,5 +17,5 @@ The olive recipe `phi-4_model_builder_int4.json` uses `ModelBuilder` and `MatMul
 Use the following command to export the model using Olive with NvTensorRTRTXExecutionProvider:
 
 ```bash
-olive run --config phi-4-Instruct_model_builder_int4.json
+olive run --config phi-4_model_builder_int4.json
 ```
