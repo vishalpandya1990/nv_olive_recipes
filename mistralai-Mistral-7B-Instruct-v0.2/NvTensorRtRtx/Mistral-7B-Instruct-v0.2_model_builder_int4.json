@@ -1,7 +1,7 @@
 {
     "input_model": {
         "type": "HfModel",
-        "model_path": "Qwen/Qwen2.5-7B-Instruct",
+        "model_path": "mistralai/Mistral-7B-Instruct-v0.2",
         "task": "text-classification"
     },
     "systems": {
@@ -12,14 +12,14 @@
     },
     "engine": { "target": "local_system" },
     "passes": {
-        "mb": {
-            "type": "ModelBuilder",
-            "precision": "int4",
-            "int4_block_size": 32,
-            "int4_algo_config": "default",
-            "int4_is_symmetric": true,
-            "enable_cuda_graph": true
-        },
+      "mb": {
+        "type": "ModelBuilder",
+        "precision": "int4",
+        "int4_block_size": 32,
+        "int4_algo_config": "rtn",
+        "int4_is_symmetric": true,
+        "enable_cuda_graph": true
+      },
         "mq": {
             "type": "MatMulNBitsToQDQ",
             "use_int4": true,

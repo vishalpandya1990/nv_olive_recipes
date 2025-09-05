@@ -12,7 +12,7 @@
     },
     "engine": { "target": "local_system" },
     "passes": {
-        "builder": { "type": "ModelBuilder", "precision": "fp16" }
+        "builder": { "type": "ModelBuilder", "precision": "fp16", "enable_cuda_graph": true }
 
     }
 }
