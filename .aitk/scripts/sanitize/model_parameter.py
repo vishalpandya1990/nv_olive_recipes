@@ -95,7 +95,7 @@ class Section(BaseModel):
         #    return False
         # TODO add place holder for General?
         if not self.parameters and self.phase != PhaseTypeEnum.Conversion:
-            printWarning(f"self.parameters is empty for {self.phase}.")
+            printWarning(f"{_file} self.parameters is empty for {self.phase}.")
 
         for i, parameter in enumerate(self.parameters):
             if parameter.template:
@@ -160,6 +160,10 @@ class DebugInfo(BaseModel):
     # - could not disable quantization
     # - use OpenVINOConversion for conversion
     useOpenVINOOptimumConversion: Optional[str] = None
+    # This kind of config will
+    # - could not disable quantization
+    # - use QuarkQuantization for conversion
+    useQuarkQuantization: Optional[str] = None
 
     def setupUseX(self, oliveJson: Any):
         def getPass(passType: str):
@@ -172,41 +176,32 @@ class DebugInfo(BaseModel):
                 None,
             )
 
-        # setup useModelBuilder
         self.useModelBuilder = getPass(OlivePassNames.ModelBuilder)
-
-        # setup useOpenVINOConversion
         self.useOpenVINOConversion = getPass(OlivePassNames.OpenVINOConversion)
-
-        # setup useOpenVINOOptimumConversion
         self.useOpenVINOOptimumConversion = getPass(OlivePassNames.OpenVINOOptimumConversion)
-        if (
-            sum(
-                bool(v)
-                for v in [
-                    self.useModelBuilder,
-                    self.useOpenVINOConversion,
-                    self.useOpenVINOOptimumConversion,
-                ]
-            )
-            > 1
-        ):
-            printError(f"should not have both useModelBuilder and useOpenVINOConversion")
+        self.useQuarkQuantization = getPass(OlivePassNames.QuarkQuantization)
+
+        notEmpty = [
+            v
+            for v in [
+                self.useModelBuilder,
+                self.useOpenVINOConversion,
+                self.useOpenVINOOptimumConversion,
+                self.useQuarkQuantization,
+            ]
+            if v
+        ]
+        self._use = notEmpty[0] if notEmpty else None
+        if len(notEmpty) > 1:
+            printError(f"should not mix them")
             return False
         return True
 
     def getUseX(self):
-        if self.useModelBuilder:
-            return self.useModelBuilder
-        elif self.useOpenVINOConversion:
-            return self.useOpenVINOConversion
-        elif self.useOpenVINOOptimumConversion:
-            return self.useOpenVINOOptimumConversion
-        else:
-            return None
+        return self._use
 
     def isEmpty(self):
-        return not (self.useModelBuilder or self.useOpenVINOConversion or self.useOpenVINOOptimumConversion)
+        return not self._use
 
 
 class ModelParameter(BaseModelClass):
@@ -326,7 +321,7 @@ class ModelParameter(BaseModelClass):
                 self.runtime.displayNames.append(GlobalVars.RuntimeToDisplayName[tmpRuntimeRPC])
 
         self.runtime.actions = runtimeActions
-        self.TryToRemoveReuseCacheInRuntimeAction(oliveJson)
+        self.TryToRemoveReuseCacheInRuntimeAction(oliveJson, modelInfo)
         if not self.runtime.Check(False, oliveJson, modelList):
             printError(f"{self._file} runtime has error")
 
@@ -388,6 +383,8 @@ class ModelParameter(BaseModelClass):
                                 OlivePassNames.OnnxQuantization,
                                 OlivePassNames.OnnxStaticQuantization,
                                 OlivePassNames.OnnxDynamicQuantization,
+                                # for trtrtx
+                                OlivePassNames.OnnxFloatToFloat16,
                             ]
                         ][0]
                         conversion = [
@@ -443,14 +440,14 @@ class ModelParameter(BaseModelClass):
             self.isGPURequired = None
 
         self.checkPhase(oliveJson)
-        self.CheckRuntimeInConversion(oliveJson, modelList)
-        self.checkOliveFile(oliveJson)
+        self.CheckRuntimeInConversion(oliveJson, modelList, modelInfo)
+        self.checkOliveFile(oliveJson, modelInfo)
         self.checkRequirements(modelList)
         if self.debugInfo and self.debugInfo.isEmpty():
             self.debugInfo = None
         self.writeIfChanged()
 
-    def TryToRemoveReuseCacheInRuntimeAction(self, oliveJson: Any):
+    def TryToRemoveReuseCacheInRuntimeAction(self, oliveJson: Any, modelInfo: ModelInfo):
         if not self.runtime or not self.runtime.values:
             printError(f"{self._file} runtime values is empty, cannot remove reuse_cache")
             return
@@ -463,6 +460,9 @@ class ModelParameter(BaseModelClass):
                     reuse_cache_paths.append(reuse_cache_path)
 
         if reuse_cache_paths:
+            # Previously, in debug mode for olive, this will throw exception 'file is occupied' for ov recipes
+            # Seem fixed here https://github.com/microsoft/Olive/pull/2017/files
+            return None
             if self.runtime.actions is None:
                 self.runtime.actions = []
             for i in range(len(self.runtime.values)):
@@ -477,7 +477,10 @@ class ModelParameter(BaseModelClass):
                     )
         return None
 
-    def CheckRuntimeInConversion(self, oliveJson: Any, modelList: ModelList):
+    def CheckRuntimeInConversion(self, oliveJson: Any, modelList: ModelList, modelInfo: ModelInfo):
+        self.runtimeInConversion = None
+        return
+
         def getOpenVINOPass(passType: str):
             return next(
                 (
@@ -569,10 +572,14 @@ class ModelParameter(BaseModelClass):
         ):
             printWarning(f"{self._file}'s olive json should have two data configs for evaluation")
 
-    def checkOliveFile(self, oliveJson: Any):
+    def checkOliveFile(self, oliveJson: Any, modelInfo: ModelInfo):
         if not GlobalVars.olivePath:
             return
+        if modelInfo.extension:
+            return
         if not self.oliveFile:
+            if self.runtime and self.runtime.displayNames and self.runtime.displayNames[0] == GlobalVars.RuntimeToDisplayName[RuntimeEnum.DML]:
+                return
             printWarning(f"{self._file} does not have oliveFile")
             return
 
@@ -598,8 +605,7 @@ class ModelParameter(BaseModelClass):
         removeds: list[str] = diff.pop("dictionary_item_removed", [])
         newRemoveds = []
         for removed in removeds:
-            if removed.endswith("['reuse_cache']"):
-                # In debug mode for olive, this will throw exception 'file is occupied' for ov recipes
+            if removed == "root['add_metadata']":
                 pass
             else:
                 newRemoveds.append(removed)
@@ -618,8 +624,8 @@ class ModelParameter(BaseModelClass):
             diff["values_changed"] = newChangeds
 
         if diff:
-            # Check out branch hualxie/example_align for alignments
-            printError(f"different from {self.oliveFile}\r\n{diff}")
+            path = Path(self._file if self._file else "UNKNOWN")
+            printError(f"{"/".join(path.parts[-3:])} different from {self.oliveFile}\r\n{diff}")
         GlobalVars.oliveCheck += 1
 
     def checkDebugInfo(self, oliveJson: Any):
